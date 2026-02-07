@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PolyArb Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: #0a0e17;
+            color: #c9d1d9;
+            padding: 20px;
+            font-size: 14px;
+        }
+        h1 { color: #58a6ff; margin-bottom: 4px; font-size: 20px; }
+        h2 { color: #8b949e; font-size: 14px; margin-bottom: 12px; font-weight: normal; }
+        h3 { color: #58a6ff; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .status-dot.green { background: #3fb950; }
+        .status-dot.red { background: #f85149; }
+        .status-dot.yellow { background: #d29922; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 14px;
+        }
+        .card .label { color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .value { font-size: 22px; font-weight: bold; color: #c9d1d9; margin-top: 4px; }
+        .card .value.positive { color: #3fb950; }
+        .card .value.negative { color: #f85149; }
+
+        .section { margin-bottom: 24px; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; color: #8b949e; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px; border-bottom: 1px solid #30363d; }
+        td { padding: 8px; border-bottom: 1px solid #21262d; font-size: 13px; }
+        tr:hover { background: #161b22; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge.filled { background: #238636; color: #fff; }
+        .badge.failed { background: #da3633; color: #fff; }
+        .badge.detected { background: #1f6feb; color: #fff; }
+        .badge.executing { background: #d29922; color: #fff; }
+        .badge.paper { background: #8957e5; color: #fff; }
+
+        .profit-highlight { color: #3fb950; font-weight: bold; }
+        .loss-highlight { color: #f85149; font-weight: bold; }
+
+        .btn {
+            padding: 6px 14px;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            background: #21262d;
+            color: #c9d1d9;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .btn:hover { background: #30363d; }
+        .btn.danger { border-color: #f85149; color: #f85149; }
+        .btn.danger:hover { background: #f85149; color: #fff; }
+
+        .event-row { cursor: pointer; }
+        .event-detail { display: none; background: #0d1117; }
+        .event-detail td { padding: 4px 8px 4px 30px; font-size: 12px; color: #8b949e; }
+
+        .spread-bar {
+            display: inline-block;
+            height: 6px;
+            border-radius: 3px;
+            background: #238636;
+            min-width: 2px;
+            vertical-align: middle;
+            margin-left: 6px;
+        }
+
+        #last-update { color: #484f58; font-size: 11px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>PolyArb NegRisk Arbitrage</h1>
+            <h2>
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+                <span id="paper-badge" class="badge paper" style="display:none;">PAPER</span>
+            </h2>
+        </div>
+        <div>
+            <button class="btn" id="btn-halt" onclick="haltTrading()">Halt Trading</button>
+            <button class="btn" id="btn-resume" onclick="resumeTrading()" style="display:none;">Resume</button>
+            <span id="last-update"></span>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="label">Total Exposure</div>
+            <div class="value" id="total-exposure">$0.00</div>
+        </div>
+        <div class="card">
+            <div class="label">Daily P&L</div>
+            <div class="value" id="daily-pnl">$0.0000</div>
+        </div>
+        <div class="card">
+            <div class="label">Cumulative P&L</div>
+            <div class="value" id="cumulative-pnl">$0.0000</div>
+        </div>
+        <div class="card">
+            <div class="label">Events Monitored</div>
+            <div class="value" id="events-count">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Opportunities</div>
+            <div class="value" id="opps-count">0</div>
+        </div>
+        <div class="card">
+            <div class="label">Trades Executed</div>
+            <div class="value" id="trade-count">0</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Monitored Events</h3>
+        <table id="events-table">
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Outcomes</th>
+                    <th>YES Sum</th>
+                    <th>Spread</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="events-body"></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Recent Opportunities</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>YES Sum</th>
+                    <th>Profit/Set</th>
+                    <th>Max Sets</th>
+                    <th>Est. Profit</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="opps-body"></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3>Trade History</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Event</th>
+                    <th>Sets</th>
+                    <th>Cost</th>
+                    <th>Profit</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="trades-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let evtSource = null;
+
+        function connectSSE() {
+            evtSource = new EventSource('/api/stream');
+            evtSource.addEventListener('status', (e) => {
+                const data = JSON.parse(e.data);
+                updateStatus(data);
+            });
+            evtSource.onerror = () => {
+                setTimeout(connectSSE, 3000);
+            };
+        }
+
+        function updateStatus(s) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            const paper = document.getElementById('paper-badge');
+
+            if (s.trading_halted) {
+                dot.className = 'status-dot red';
+                text.textContent = 'HALTED: ' + s.halt_reason;
+                document.getElementById('btn-halt').style.display = 'none';
+                document.getElementById('btn-resume').style.display = '';
+            } else if (s.running && s.ws_connected) {
+                dot.className = 'status-dot green';
+                text.textContent = `Running | ${s.ws_subscriptions} feeds | ${formatUptime(s.uptime_seconds)}`;
+                document.getElementById('btn-halt').style.display = '';
+                document.getElementById('btn-resume').style.display = 'none';
+            } else {
+                dot.className = 'status-dot yellow';
+                text.textContent = 'Connecting...';
+            }
+
+            paper.style.display = s.paper_trading ? '' : 'none';
+
+            setValue('total-exposure', '$' + s.total_exposure.toFixed(2));
+            setPnl('daily-pnl', s.daily_pnl);
+            setPnl('cumulative-pnl', s.cumulative_pnl);
+            document.getElementById('events-count').textContent = s.events_monitored;
+            document.getElementById('opps-count').textContent = s.opportunities_detected;
+            document.getElementById('trade-count').textContent = s.trade_count;
+            document.getElementById('last-update').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        }
+
+        function setPnl(id, val) {
+            const el = document.getElementById(id);
+            el.textContent = '$' + val.toFixed(4);
+            el.className = 'value ' + (val >= 0 ? 'positive' : 'negative');
+        }
+
+        function setValue(id, text) {
+            document.getElementById(id).textContent = text;
+        }
+
+        function formatUptime(s) {
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        }
+
+        async function fetchEvents() {
+            try {
+                const res = await fetch('/api/events');
+                const events = await res.json();
+                const tbody = document.getElementById('events-body');
+                tbody.innerHTML = '';
+                for (const ev of events) {
+                    const tr = document.createElement('tr');
+                    tr.className = 'event-row';
+                    const spreadPct = ev.spread_from_1 ? (ev.spread_from_1 * 100).toFixed(1) : '-';
+                    const barWidth = ev.spread_from_1 ? Math.max(2, Math.min(100, ev.spread_from_1 * 500)) : 0;
+                    const spreadColor = ev.spread_from_1 && ev.spread_from_1 > 0 ? '#3fb950' : '#f85149';
+                    tr.innerHTML = `
+                        <td>${truncate(ev.title, 50)}</td>
+                        <td>${ev.num_outcomes}</td>
+                        <td>${ev.yes_sum !== null ? ev.yes_sum.toFixed(4) : '-'}</td>
+                        <td>
+                            ${spreadPct}%
+                            <span class="spread-bar" style="width:${barWidth}px;background:${spreadColor}"></span>
+                        </td>
+                        <td></td>
+                    `;
+                    tbody.appendChild(tr);
+
+                    // Outcome detail rows
+                    if (ev.outcomes) {
+                        for (const o of ev.outcomes) {
+                            const dtr = document.createElement('tr');
+                            dtr.className = 'event-detail';
+                            dtr.innerHTML = `
+                                <td colspan="5">
+                                    ${truncate(o.name, 40)} | Ask: ${o.best_ask !== null ? o.best_ask.toFixed(3) : '-'} | Bid: ${o.best_bid !== null ? o.best_bid.toFixed(3) : '-'} | Size: ${o.ask_size.toFixed(1)}
+                                </td>
+                            `;
+                            tbody.appendChild(dtr);
+                        }
+                    }
+
+                    tr.onclick = () => {
+                        let next = tr.nextElementSibling;
+                        while (next && next.classList.contains('event-detail')) {
+                            next.style.display = next.style.display === 'table-row' ? 'none' : 'table-row';
+                            next = next.nextElementSibling;
+                        }
+                    };
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        async function fetchOpps() {
+            try {
+                const res = await fetch('/api/opportunities');
+                const opps = await res.json();
+                const tbody = document.getElementById('opps-body');
+                tbody.innerHTML = '';
+                for (const o of opps.slice(0, 50)) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${formatAge(o.age_seconds)}</td>
+                        <td>${truncate(o.event_title, 40)}</td>
+                        <td>${o.total_yes_cost.toFixed(4)}</td>
+                        <td class="profit-highlight">$${o.profit_per_set.toFixed(4)}</td>
+                        <td>${o.max_sets.toFixed(0)}</td>
+                        <td class="profit-highlight">$${o.estimated_profit.toFixed(4)}</td>
+                        <td><span class="badge ${o.status}">${o.status}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        async function fetchTrades() {
+            try {
+                const res = await fetch('/api/trades');
+                const trades = await res.json();
+                const tbody = document.getElementById('trades-body');
+                tbody.innerHTML = '';
+                for (const t of trades.slice(0, 50)) {
+                    const tr = document.createElement('tr');
+                    const profitClass = t.realized_profit >= 0 ? 'profit-highlight' : 'loss-highlight';
+                    tr.innerHTML = `
+                        <td>${new Date(t.timestamp * 1000).toLocaleTimeString()}</td>
+                        <td>${truncate(t.event_title || '', 40)}</td>
+                        <td>${t.filled_sets}/${t.intended_sets}</td>
+                        <td>$${(t.total_cost || 0).toFixed(4)}</td>
+                        <td class="${profitClass}">$${(t.realized_profit || 0).toFixed(4)}</td>
+                        <td><span class="badge ${t.status}">${t.status}</span></td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        function truncate(s, n) {
+            return s.length > n ? s.substring(0, n) + '...' : s;
+        }
+
+        function formatAge(s) {
+            if (s < 60) return Math.round(s) + 's ago';
+            if (s < 3600) return Math.round(s / 60) + 'm ago';
+            return Math.round(s / 3600) + 'h ago';
+        }
+
+        async function haltTrading() {
+            await fetch('/api/halt', { method: 'POST' });
+        }
+
+        async function resumeTrading() {
+            await fetch('/api/resume', { method: 'POST' });
+        }
+
+        // Initialize
+        connectSSE();
+        setInterval(fetchEvents, 3000);
+        setInterval(fetchOpps, 2000);
+        setInterval(fetchTrades, 5000);
+        fetchEvents();
+        fetchOpps();
+        fetchTrades();
+    </script>
+</body>
+</html>
