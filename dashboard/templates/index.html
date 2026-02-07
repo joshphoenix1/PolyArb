@@ -134,6 +134,14 @@
     </div>
 
     <div class="section">
+        <h3>Cumulative P&L</h3>
+        <div class="card" style="padding:10px 14px;">
+            <canvas id="pnl-chart" height="120" style="width:100%;"></canvas>
+            <div id="pnl-no-data" style="color:#484f58;text-align:center;padding:30px 0;font-size:12px;">No trades yet - chart will appear after first trade</div>
+        </div>
+    </div>
+
+    <div class="section">
         <h3>Monitored Events</h3>
         <table id="events-table">
             <thead>
@@ -348,6 +356,133 @@
             return Math.round(s / 3600) + 'h ago';
         }
 
+        async function fetchPnlChart() {
+            try {
+                const res = await fetch('/api/pnl_history');
+                const data = await res.json();
+                drawPnlChart(data);
+            } catch (e) { /* ignore */ }
+        }
+
+        function drawPnlChart(data) {
+            const canvas = document.getElementById('pnl-chart');
+            const noData = document.getElementById('pnl-no-data');
+            const ctx = canvas.getContext('2d');
+
+            if (!data || data.length === 0) {
+                canvas.style.display = 'none';
+                noData.style.display = '';
+                return;
+            }
+            canvas.style.display = '';
+            noData.style.display = 'none';
+
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            const W = rect.width;
+            const H = rect.height;
+
+            const pad = { top: 20, right: 60, bottom: 25, left: 10 };
+            const plotW = W - pad.left - pad.right;
+            const plotH = H - pad.top - pad.bottom;
+
+            const pnls = data.map(d => d.pnl);
+            const times = data.map(d => d.timestamp);
+            const minPnl = Math.min(0, ...pnls);
+            const maxPnl = Math.max(0.001, ...pnls);
+            const range = maxPnl - minPnl || 0.001;
+            const minT = times[0];
+            const maxT = times[times.length - 1];
+            const rangeT = maxT - minT || 1;
+
+            const toX = t => pad.left + ((t - minT) / rangeT) * plotW;
+            const toY = p => pad.top + plotH - ((p - minPnl) / range) * plotH;
+
+            // Clear
+            ctx.clearRect(0, 0, W, H);
+
+            // Zero line
+            const zeroY = toY(0);
+            ctx.strokeStyle = '#30363d';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(pad.left, zeroY);
+            ctx.lineTo(W - pad.right, zeroY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Zero label
+            ctx.fillStyle = '#484f58';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('$0', W - pad.right + 5, zeroY + 3);
+
+            // Fill area
+            ctx.beginPath();
+            ctx.moveTo(toX(times[0]), zeroY);
+            for (let i = 0; i < data.length; i++) {
+                ctx.lineTo(toX(times[i]), toY(pnls[i]));
+            }
+            ctx.lineTo(toX(times[times.length - 1]), zeroY);
+            ctx.closePath();
+            const lastPnl = pnls[pnls.length - 1];
+            const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH);
+            if (lastPnl >= 0) {
+                grad.addColorStop(0, 'rgba(63,185,80,0.25)');
+                grad.addColorStop(1, 'rgba(63,185,80,0.02)');
+            } else {
+                grad.addColorStop(0, 'rgba(248,81,73,0.02)');
+                grad.addColorStop(1, 'rgba(248,81,73,0.25)');
+            }
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Line
+            ctx.beginPath();
+            for (let i = 0; i < data.length; i++) {
+                const x = toX(times[i]);
+                const y = toY(pnls[i]);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = lastPnl >= 0 ? '#3fb950' : '#f85149';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // End dot
+            const lastX = toX(times[times.length - 1]);
+            const lastY = toY(lastPnl);
+            ctx.beginPath();
+            ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+            ctx.fillStyle = lastPnl >= 0 ? '#3fb950' : '#f85149';
+            ctx.fill();
+
+            // End label
+            ctx.fillStyle = lastPnl >= 0 ? '#3fb950' : '#f85149';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('$' + lastPnl.toFixed(4), W - pad.right + 5, lastY + 4);
+
+            // Max label
+            if (maxPnl > 0) {
+                ctx.fillStyle = '#484f58';
+                ctx.font = '10px monospace';
+                ctx.fillText('$' + maxPnl.toFixed(4), W - pad.right + 5, pad.top + 10);
+            }
+
+            // Time labels
+            ctx.fillStyle = '#484f58';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            if (data.length > 1) {
+                ctx.fillText(new Date(times[0] * 1000).toLocaleTimeString(), toX(times[0]), H - 5);
+                ctx.fillText(new Date(times[times.length-1] * 1000).toLocaleTimeString(), toX(times[times.length-1]), H - 5);
+            }
+        }
+
         async function haltTrading() {
             await fetch('/api/halt', { method: 'POST' });
         }
@@ -361,9 +496,11 @@
         setInterval(fetchEvents, 3000);
         setInterval(fetchOpps, 2000);
         setInterval(fetchTrades, 5000);
+        setInterval(fetchPnlChart, 5000);
         fetchEvents();
         fetchOpps();
         fetchTrades();
+        fetchPnlChart();
     </script>
 </body>
 </html>

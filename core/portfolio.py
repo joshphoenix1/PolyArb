@@ -208,5 +208,22 @@ class PortfolioTracker:
         row = cursor.fetchone()
         return int(row["cnt"])
 
+    def get_pnl_history(self) -> list[dict]:
+        """Get cumulative P&L over time as a time series."""
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT timestamp, realized_profit FROM trades ORDER BY timestamp ASC"
+        )
+        rows = cursor.fetchall()
+        result = []
+        cumulative = 0.0
+        for row in rows:
+            cumulative += float(row["realized_profit"] or 0)
+            result.append({
+                "timestamp": row["timestamp"],
+                "pnl": round(cumulative, 4),
+            })
+        return result
+
     def close(self):
         self._conn.close()

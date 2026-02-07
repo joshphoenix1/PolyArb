@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     # Paper trading
     paper_trading: bool = True
 
-    # Stale data threshold (seconds)
-    stale_data_threshold: float = 2.0
+    # Stale data threshold (seconds) - applied only when an opportunity is detected
+    # The executor always re-verifies via REST before placing orders
+    stale_data_threshold: float = 30.0
 
     # Min liquidity (open interest in USDC) to consider a market
     min_liquidity: float = 100.0

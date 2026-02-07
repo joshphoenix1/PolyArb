@@ -104,6 +104,13 @@ def create_router(bot_state: "BotState") -> APIRouter:
             return []
         return portfolio.get_open_positions()
 
+    @router.get("/api/pnl_history")
+    async def pnl_history():
+        portfolio = bot_state.portfolio
+        if not portfolio:
+            return []
+        return portfolio.get_pnl_history()
+
     @router.get("/api/stream")
     async def stream(request: Request):
         """Server-Sent Events stream for live dashboard updates."""

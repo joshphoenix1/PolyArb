@@ -53,6 +53,9 @@ class ArbitrageDetector:
         sizes: dict[str, float] = {}
         tick_size = 0.01
 
+        max_book_age = 0.0
+        now = time.time()
+
         for i, outcome in enumerate(event.outcomes):
             ob = self._ws.get_orderbook(outcome.token_id)
             if ob is None or ob.best_ask is None:
@@ -60,15 +63,9 @@ class ArbitrageDetector:
                 self._price_sums[event_id] = float("nan")
                 return None
 
-            if ob.is_stale:
-                logger.debug(
-                    f"Stale data for {outcome.name} in {event.title}, skipping"
-                )
-                self._price_sums[event_id] = float("nan")
-                return None
-
             prices[outcome.token_id] = ob.best_ask
             sizes[outcome.token_id] = ob.best_ask_size
+            max_book_age = max(max_book_age, now - ob.timestamp)
 
             # Use the tick size from the market if available
             if i < len(event.markets):
@@ -83,6 +80,15 @@ class ArbitrageDetector:
         profit_per_set = 1.0 - total_yes_cost
 
         if profit_per_set < settings.min_profit_threshold:
+            return None
+
+        # Only enforce staleness when we have an actual opportunity
+        # (stale data during normal monitoring is fine — the executor
+        # re-verifies prices via REST before placing orders)
+        if max_book_age > settings.stale_data_threshold:
+            logger.debug(
+                f"Opportunity in {event.title} but oldest book is {max_book_age:.1f}s old, skipping"
+            )
             return None
 
         # Max sets is limited by the smallest ask depth across all outcomes
